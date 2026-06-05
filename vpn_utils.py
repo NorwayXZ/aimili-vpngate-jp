@@ -539,8 +539,8 @@ def diagnose_openvpn_failure(log_tail: list[str]) -> tuple[int, str]:
     if "command not found" in joined_log or "no such file or directory" in joined_log:
         return 2001, "[ERR_OVPN_CMD_NOT_FOUND] 未找到 openvpn 命令。原因: 系统中未安装 OpenVPN 软件，或环境变量 PATH 不正确。"
     
-    if "cannot allocate tun" in joined_log or "cannot open tun/tap dev" in joined_log or "cannot ioctl" in joined_log or "cannot allocate tun/tap dev" in joined_log:
-        return 2009, "[ERR_OVPN_TUN_NOT_AVAILABLE] 无法创建虚拟网卡 (TUN 设备)。原因: 缺少 tun 内核模块，或当前容器(如 LXC/OpenVZ/Docker)未被宿主机授予网卡创建权限。请在 VPS 面板中启用 TUN 或联系服务商。"
+    if "cannot allocate tun" in joined_log or "cannot open tun/tap dev" in joined_log or "cannot ioctl" in joined_log or "cannot allocate tun/tap dev" in joined_log or "dev/net/tun" in joined_log or "operation not permitted" in joined_log:
+        return 2009, "[ERR_OVPN_TUN_NOT_AVAILABLE] 无法创建或访问虚拟网卡 (TUN 设备)。原因: ① 缺少 tun 内核模块；② 当前运行在容器(如 LXC/OpenVZ/Docker)中且宿主机未授予网卡创建权限/未启用 CAP_NET_ADMIN 权限；③ `/dev/net/tun` 文件权限不足；④ 未使用 root 用户运行。如果是 Docker，请添加 `--cap-add=NET_ADMIN` 和 `--device=/dev/net/tun` 参数重新运行。"
         
     if "auth_failed" in joined_log or "authentication failed" in joined_log:
         return 2005, "[ERR_OVPN_AUTH_FAILED] OpenVPN 身份验证失败。原因: 节点配置的用户名密码不正确，或者该免费节点已失效/限制连接。"
@@ -587,6 +587,18 @@ def diagnose_local_obstructions(proxy_port: int = 7928, host: str = "127.0.0.1")
                 pass
 
     if sys.platform.startswith("linux"):
+        # 1.5 检查 /dev/net/tun 虚拟网卡接口是否可用与具备权限
+        tun_path = Path("/dev/net/tun")
+        if not tun_path.exists():
+            return 3009, "[ERR_TUN_DEV_NOT_FOUND] 系统中不存在虚拟网卡设备节点 `/dev/net/tun`。原因: 内核未加载 tun 模块，或宿主机禁用了 TUN 设备创建权限。请尝试运行 `modprobe tun` 加载模块，或在 VPS 控制面板中开启 TUN 支持。"
+        try:
+            with open(tun_path, "r+b") as f:
+                pass
+        except PermissionError:
+            return 3010, "[ERR_TUN_PERMISSION_DENIED] 无权访问虚拟网卡设备节点 `/dev/net/tun`。原因: 当前用户对该节点没有读写权限。请确保使用 root 权限运行，或者运行 `chmod 666 /dev/net/tun` 赋予读写权限。"
+        except Exception:
+            pass
+
         # 2. 检查 IPv4 转发是否开启
         ip_forward_path = Path("/proc/sys/net/ipv4/ip_forward")
         if ip_forward_path.exists():
