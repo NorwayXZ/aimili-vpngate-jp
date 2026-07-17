@@ -145,6 +145,9 @@ last_checker_heartbeat = 0.0
 last_pinger_heartbeat = 0.0
 server_start_time = time.time()
 
+class NoTargetNodesError(RuntimeError):
+    pass
+
 def ensure_dirs() -> None:
     DATA_DIR.mkdir(exist_ok=True, parents=True)
     CONFIG_DIR.mkdir(exist_ok=True, parents=True)
@@ -349,6 +352,16 @@ def read_nodes() -> list[dict[str, Any]]:
     if not isinstance(raw, list):
         return []
     return [item for item in raw if isinstance(item, dict)]
+
+def clear_inactive_nodes(message: str) -> None:
+    with lock:
+        nodes = read_nodes()
+        kept = [
+            n for n in nodes
+            if active_openvpn_node_id and n.get("id") == active_openvpn_node_id
+        ]
+        write_json(NODES_FILE, kept)
+    set_state(valid_nodes=0, last_check_message=message)
 
 def get_state() -> dict[str, Any]:
     global active_openvpn_node_id, is_connecting
@@ -805,7 +818,7 @@ def fetch_candidates() -> list[dict[str, Any]]:
             break
             
     if not candidates:
-        if api_returned_rows and last_err is None:
+        if api_returned_rows:
             diag_msg = f"官方 API 可用，但没有找到可用的 {target_label} 节点。可能是该地区当前无公开 VPNGate 节点，或节点已被黑名单临时跳过。"
             print(f"[fetch_candidates] {diag_msg}", flush=True)
             log_to_json("WARNING", "Main", diag_msg)
@@ -814,7 +827,7 @@ def fetch_candidates() -> list[dict[str, Any]]:
                 last_fetch_error_code=0,
                 last_fetch_message=diag_msg
             )
-            raise RuntimeError(diag_msg)
+            raise NoTargetNodesError(diag_msg)
         err_code, diag_msg = vpn_utils.diagnose_api_failure(API_URL)
         full_err_msg = f"获取官方 API 节点最终失败: {last_err} | 诊断结果: {diag_msg}"
         print(f"[错误代码 {err_code}] {full_err_msg}", flush=True)
@@ -1763,9 +1776,21 @@ def maintain_valid_nodes(force: bool = False) -> str:
                         auto_switch_node()
                         is_connecting = True
 
+        no_candidates_message = "没有拉取到新节点"
         try:
             set_state(is_connecting=True, last_check_message="正在拉取最新的免费 VPN 节点列表...")
             candidates = fetch_candidates()
+        except NoTargetNodesError as exc:
+            diag_msg = str(exc)
+            no_candidates_message = diag_msg
+            clear_inactive_nodes(diag_msg)
+            set_state(
+                last_fetch_at=time.time(),
+                last_fetch_status="empty",
+                last_fetch_message=diag_msg,
+                is_connecting=False,
+            )
+            candidates = []
         except Exception as exc:
             vpn_utils.check_and_fix_dns()
             diag_msg = str(exc)
@@ -1776,7 +1801,7 @@ def maintain_valid_nodes(force: bool = False) -> str:
             candidates = []
 
         if not candidates:
-            return "没有拉取到新节点"
+            return no_candidates_message
 
         with lock:
             current_nodes = read_nodes()
@@ -1960,7 +1985,7 @@ def collector_loop() -> None:
             print("[守护线程] 开始执行节点拉取与可用性检测周期任务...", flush=True)
             log_to_json("INFO", "Main", "开始执行节点拉取与可用性检测周期任务...")
             res = maintain_valid_nodes(force=False)
-            if "没有拉取到新节点" not in res:
+            if "没有拉取到新节点" not in res and "没有找到可用的" not in res:
                 success = True
             log_to_json("INFO", "Main", f"周期同步与检测任务完成，结果: {res}")
         except Exception as exc:

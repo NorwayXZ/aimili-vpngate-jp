@@ -9,6 +9,8 @@ Bilingual: [中文](#中文) | [English](#english)
 
 AimiliVPN US 是一款基于官方 VPNGate 开放协议的高性能、零依赖 VPN 代理网关。它以纯 Python 标准库编写，内置美观响应式的管理网页，提供智能并发测速、多路由模式、出站代理网关、实时日志等强大功能。本版本仅拉取、测速和连接美国（US）VPNGate 节点。
 
+> 注意：美国节点数量完全取决于 VPNGate 官方公开列表中实时在线的美国 OpenVPN 志愿节点。如果官方当前没有美国节点，本项目会清空旧的不可用缓存并继续定时重试。
+
 ---
 
 ### 🌟 VPS 优选推荐：跑 AimiliVPN 更稳更省心
@@ -138,6 +140,8 @@ bash <(curl -Ls https://raw.githubusercontent.com/NorwayXZ/aimili-vpngate-us/mai
 ## English
 
 AimiliVPN US is a high-performance, zero-dependency VPN proxy gateway built entirely using Python's standard library. It parses official VPNGate servers, benchmarks latency, and routes traffic through a built-in dual-protocol (HTTP/SOCKS5) proxy server. This version only fetches, benchmarks, and connects to United States (US) VPNGate nodes.
+
+> Note: US node availability depends entirely on live United States OpenVPN volunteer nodes in the official VPNGate list. If none are available, this project clears stale unavailable cache entries and keeps retrying.
 
 ### 🌟 Recommended VPS Deals
 [![BandwagonHost Premium Optimized Routes](https://img.shields.io/badge/BandwagonHost-Premium%20Optimized%20Routes-red?style=for-the-badge)](https://bandwagonhost.com/aff.php?aff=81790)
